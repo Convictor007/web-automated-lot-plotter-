@@ -38,6 +38,7 @@ import {
   type LotPolygonExport,
   type LotTieContext,
 } from '@/lib/export/lot-export'
+import { prepareScanImageFile } from '@/lib/ocr/prepare-scan-image'
 import { scanLandTitleImage, type ScanReviewMeta, type ScannedLot } from '@/lib/ocr/ocr-utils'
 import { formatSurveyLegSheetLabel } from '@/lib/survey/survey-leg-label'
 import { useTheme } from '@/theme/ThemeProvider'
@@ -121,6 +122,7 @@ export default function LotPlotterPage() {
   const [pendingScanLabel, setPendingScanLabel] = useState<string | null>(null)
   const [isOcrProcessing, setIsOcrProcessing] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(0)
+  const [ocrStatusHint, setOcrStatusHint] = useState<string | null>(null)
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null)
   const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState<string | null>(null)
   const [pendingImageSource, setPendingImageSource] = useState<'camera' | 'gallery' | null>(null)
@@ -528,14 +530,21 @@ export default function LotPlotterPage() {
     ocrAbortRef.current = controller
     setIsOcrProcessing(true)
     setOcrProgress(5)
+    setOcrStatusHint('Preparing image…')
     ocrProgressTimerRef.current = setInterval(() => {
       setOcrProgress((p) => {
-        if (p >= 92) return p
-        return Math.min(92, p + (p < 40 ? 7 : p < 75 ? 4 : 2))
+        if (p >= 96) return p
+        const next = p + (p < 40 ? 7 : p < 75 ? 4 : p < 90 ? 2 : 1)
+        if (next >= 85) {
+          setOcrStatusHint('Analyzing image with AI…')
+        }
+        return Math.min(96, next)
       })
     }, 550)
     try {
-      const { lots: extractedLots, meta } = await scanLandTitleImage(file, controller.signal)
+      const prepared = await prepareScanImageFile(file)
+      setOcrStatusHint('Uploading and analyzing…')
+      const { lots: extractedLots, meta } = await scanLandTitleImage(prepared, controller.signal)
       const nonEmpty = extractedLots.filter((l) => l.corners.length > 0)
       if (nonEmpty.length > 0) {
         setPendingScanLabel(`OCR_Result_${file.name}`)
@@ -563,6 +572,7 @@ export default function LotPlotterPage() {
       if (ocrAbortRef.current === controller) ocrAbortRef.current = null
       setIsOcrProcessing(false)
       setOcrProgress(0)
+      setOcrStatusHint(null)
     }
   }
 
@@ -577,6 +587,7 @@ export default function LotPlotterPage() {
     }
     setIsOcrProcessing(false)
     setOcrProgress(0)
+    setOcrStatusHint(null)
   }
 
   const setPendingImage = (file: File, source: 'camera' | 'gallery') => {
@@ -1200,7 +1211,9 @@ export default function LotPlotterPage() {
                 ) : (
                   <div className="lot-plotter-page__progress-wrap">
                     <span className="lot-plotter-page__file-name" style={{ color: colors.text }}>
-                      {isOcrProcessing ? `Analyzing Image... ${ocrProgress}%` : 'No file chosen'}
+                      {isOcrProcessing
+                        ? `Analyzing… ${ocrProgress}%${ocrStatusHint ? ` — ${ocrStatusHint}` : ''}`
+                        : 'No file chosen'}
                     </span>
                     {isOcrProcessing ? (
                       <div className="lot-plotter-page__progress-bar-track" style={{ backgroundColor: colors.border }}>

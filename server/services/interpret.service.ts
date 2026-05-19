@@ -1,20 +1,83 @@
-import { getGeminiApiKey } from '../config/env.js'
-import { geminiParseSurveyFromOcrText } from '../lib/gemini-survey.js'
+import { getGeminiApiKey, getGeminiModel } from '../config/env.js'
+import {
+  detectImageMimeType,
+  geminiVisionSurveyJson,
+} from '../lib/gemini-survey.js'
 import { normalizeOllamaLotsPayload } from '../../src/lib/ocr/ocr-survey-parse.js'
-import { parseSurveyCornersFromOcr } from '../../src/lib/ocr/ocr-survey-parse.js'
-import { extractTextFromImage } from './tesseract-ocr.service.js'
 
-function buildSuccessPayload(
-  lots: ReturnType<typeof normalizeOllamaLotsPayload>['lots'],
-  tiePointReference: string | null,
-  model: string,
-  extraWarnings: string[] = []
-) {
-  const filtered = lots.filter((l) => l.corners.length > 0)
+function parseModelJson(rawLlm: string): { parsed: unknown; error: string | null } {
+  try {
+    const start = rawLlm.trim().indexOf('{')
+    const end = rawLlm.trim().lastIndexOf('}')
+    const json =
+      start >= 0 && end > start ? rawLlm.trim().slice(start, end + 1) : rawLlm.trim()
+    return { parsed: JSON.parse(json), error: null }
+  } catch {
+    return { parsed: null, error: 'Model did not return valid JSON. Try another photo.' }
+  }
+}
+
+/**
+ * iAssess flow: Gemini vision on the uploaded image (no Tesseract on this route).
+ * Tesseract remains on POST /api/ocr for client fallback only.
+ */
+export async function interpretSurveyImage(imageBuffer: Buffer): Promise<Record<string, unknown>> {
+  if (!getGeminiApiKey()) {
+    return {
+      success: false,
+      message: 'GEMINI_API_KEY is not set in .env. AI scan requires Google Gemini.',
+      hint: 'Add GEMINI_API_KEY from Google AI Studio (https://aistudio.google.com/apikey)',
+      status: 503,
+    }
+  }
+
+  const imageBase64 = imageBuffer.toString('base64')
+  const mimeType = detectImageMimeType(imageBuffer)
+
+  let rawLlm = ''
+  let modelLabel = ''
+
+  try {
+    const result = await geminiVisionSurveyJson(imageBase64, mimeType)
+    rawLlm = result.rawJson
+    modelLabel = result.modelUsed
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Gemini request failed'
+    return {
+      success: false,
+      message: msg,
+      hint: 'Check GEMINI_API_KEY and GEMINI_MODEL in Vercel env (https://aistudio.google.com/apikey)',
+      status: 502,
+    }
+  }
+
+  const { parsed, error: parseErr } = parseModelJson(rawLlm)
+  if (parseErr || parsed === null) {
+    return {
+      success: false,
+      message: parseErr || 'Invalid JSON',
+      rawLlm: rawLlm.slice(0, 4000),
+      status: 422,
+    }
+  }
+
+  const { tiePointReference, lots: parsedLots } = normalizeOllamaLotsPayload(parsed)
+  const lots = parsedLots.filter((l) => l.corners.length > 0)
+
+  if (lots.length === 0) {
+    return {
+      success: false,
+      message:
+        'No valid survey lines after validation (0–90°, 0–59′, distance > 0). Try a clearer image or CSV upload.',
+      rawLlm: rawLlm.slice(0, 4000),
+      source: 'gemini',
+    }
+  }
+
   return {
     success: true,
-    data: filtered[0].corners,
-    lots: filtered.map((l) => ({
+    data: lots[0].corners,
+    lots: lots.map((l) => ({
       lotNo: l.lotNo,
       claimant: l.claimant,
       corners: l.corners.map((c) => ({
@@ -27,110 +90,13 @@ function buildSuccessPayload(
       })),
     })),
     tiePointReference,
-    source: 'gemini' as const,
-    model,
+    source: 'gemini',
+    model: modelLabel || getGeminiModel(),
     warnings: [
-      'Parsed from Tesseract OCR text, then structured by Gemini. Review against the document.',
-      filtered.length > 1
-        ? `Multiple lots extracted (${filtered.length}). Review each lot before plotting.`
-        : 'Verify tie point, monument→corner 1, and all distances.',
-      ...extraWarnings,
+      lots.length > 1
+        ? `Multiple lots extracted (${lots.length}). Each lot's line 1 is monument → corner 1 for that parcel. Switch lots in review before OK.`
+        : 'Line 1 should be from the document tie monument to corner 1; verify tiePointReference and all distances.',
+      'Review all values against the document before plotting. Vision models can still make mistakes.',
     ],
-  }
-}
-
-/**
- * 1) Tesseract extracts full document text  
- * 2) Gemini (with model fallbacks) structures lots from that text  
- * 3) If Gemini fails, fall back to rule-based Tesseract line parsing
- */
-export async function interpretSurveyImage(imageBuffer: Buffer): Promise<Record<string, unknown>> {
-  if (!getGeminiApiKey()) {
-    return {
-      success: false,
-      message: 'GEMINI_API_KEY is not set in .env. AI scan requires Google Gemini.',
-      hint: 'Add GEMINI_API_KEY from Google AI Studio (https://aistudio.google.com/apikey)',
-      status: 503,
-    }
-  }
-
-  let rawText = ''
-  let pageData: Tesseract.Page | null = null
-
-  try {
-    const extracted = await extractTextFromImage(imageBuffer)
-    rawText = extracted.rawText
-    pageData = extracted.pageData
-  } catch (e: unknown) {
-    return {
-      success: false,
-      message: e instanceof Error ? e.message : 'Tesseract OCR failed',
-      status: 500,
-    }
-  }
-
-  if (!rawText.trim()) {
-    return {
-      success: false,
-      message: 'OCR could not read any text from the image. Use better lighting or upload a CSV.',
-      status: 422,
-    }
-  }
-
-  try {
-    const { rawJson, modelUsed } = await geminiParseSurveyFromOcrText(rawText)
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(rawJson)
-    } catch {
-      return {
-        success: false,
-        message: 'Gemini returned invalid JSON. Try another photo.',
-        rawLlm: rawJson.slice(0, 4000),
-        status: 422,
-      }
-    }
-
-    const { tiePointReference, lots } = normalizeOllamaLotsPayload(parsed)
-    if (lots.filter((l) => l.corners.length > 0).length === 0) {
-      return {
-        success: false,
-        message:
-          'Gemini could not extract valid survey lines from the OCR text. Try a clearer image or CSV.',
-        rawLlm: rawJson.slice(0, 4000),
-        source: 'gemini',
-        model: modelUsed,
-      }
-    }
-
-    return buildSuccessPayload(lots, tiePointReference, modelUsed)
-  } catch (geminiError: unknown) {
-    const geminiMsg = geminiError instanceof Error ? geminiError.message : 'Gemini failed'
-
-    if (pageData) {
-      const { corners, warnings } = parseSurveyCornersFromOcr(pageData)
-      if (corners.length > 0) {
-        return {
-          success: true,
-          data: corners,
-          lots: [{ lotNo: null, claimant: null, corners }],
-          tiePointReference: null,
-          source: 'tesseract',
-          model: 'tesseract-layout',
-          warnings: [
-            `Gemini unavailable: ${geminiMsg}`,
-            'Used rule-based OCR line parsing instead. Compare every value to your document.',
-            ...(warnings || []),
-          ],
-        }
-      }
-    }
-
-    return {
-      success: false,
-      message: geminiMsg,
-      hint: 'All Gemini models were busy or unavailable, and rule-based OCR parsing found no valid lines.',
-      status: 502,
-    }
   }
 }

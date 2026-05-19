@@ -4,11 +4,12 @@ GIS lot plotter with an internal API for document scan.
 LIVE-DEMO : https://web-automated-lot-plotter.vercel.app
 ## Scan pipeline
 
-1. **Tesseract.js** — extracts full text from the uploaded image  
-2. **Google Gemini** — reads that OCR text and returns structured lots (bearings, distances, tie point)  
-3. If every Gemini model is busy/unavailable → **rule-based** Tesseract line parsing as fallback  
+Same as **iAssess** lot plotter:
 
-No Ollama or external iAssess server.
+1. **POST /api/ocr-interpret** — **Gemini vision** reads the uploaded image and returns structured lots  
+2. If AI fails (local dev only) → **POST /api/ocr** — Tesseract + rule-based line parsing  
+
+On **Vercel**, only the vision step runs (Tesseract fallback is skipped — too slow on serverless).
 
 ## Quick start
 

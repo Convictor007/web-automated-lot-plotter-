@@ -31,9 +31,17 @@ export function createApiApp(): express.Express {
   app.use(securityHeadersMiddleware)
   app.use(corsMiddleware)
 
-  app.use('/api', globalApiRateLimiter, ocrRouter, (_req, res) => {
+  const apiNotFound: express.RequestHandler = (_req, res) => {
     res.status(404).json({ success: false, message: 'Not found' })
-  })
+  }
+
+  // Local dev + explicit /api/* paths
+  app.use('/api', globalApiRateLimiter, ocrRouter, apiNotFound)
+
+  // Vercel rewrites often deliver /ocr-interpret (no /api prefix) to api/index.ts
+  if (isVercel()) {
+    app.use(globalApiRateLimiter, ocrRouter, apiNotFound)
+  }
 
   app.use(notFoundHandler)
   app.use(corsErrorHandler)

@@ -1,9 +1,14 @@
 import { apiUrl } from './http-client'
+import {
+  messageFromHttpStatus,
+  messageFromScanFetchError,
+  scanRequestSignal,
+} from './fetch-with-timeout'
 import type { ParsedCorner, ScanReviewMeta, ScannedLot } from '@/lib/ocr/ocr-types'
 
 type InterpretScanResult =
   | { ok: true; lots: ScannedLot[]; meta: ScanReviewMeta }
-  | { ok: false; message?: string }
+  | { ok: false; message?: string; timedOut?: boolean; httpStatus?: number }
 
 function buildImageFormData(file: File | Blob, filename = 'scanned_title.jpg'): FormData {
   const formData = new FormData()
@@ -51,13 +56,14 @@ export async function postOcrInterpret(
   file: File | Blob,
   signal?: AbortSignal
 ): Promise<InterpretScanResult> {
+  const requestSignal = scanRequestSignal(signal)
   try {
     const formData = await buildImageFormData(file)
     const res = await fetch(apiUrl('/api/ocr-interpret'), {
       method: 'POST',
       headers: { Accept: 'application/json' },
       body: formData,
-      signal,
+      signal: requestSignal,
     })
 
     let json: Record<string, unknown> | null = null
@@ -91,11 +97,20 @@ export async function postOcrInterpret(
       }
     }
 
-    const message = typeof json?.message === 'string' ? json.message : `AI scan failed (${res.status})`
-    return { ok: false, message }
+    const message =
+      typeof json?.message === 'string'
+        ? json.message
+        : messageFromHttpStatus(res.status) ?? `AI scan failed (${res.status})`
+    return {
+      ok: false,
+      message,
+      httpStatus: res.status,
+      timedOut: res.status === 504 || res.status === 502,
+    }
   } catch (e) {
     console.warn('ocr-interpret unavailable:', e)
-    return { ok: false, message: e instanceof Error ? e.message : 'Network error' }
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.message.includes('timeout'))
+    return { ok: false, message: messageFromScanFetchError(e), timedOut }
   }
 }
 
@@ -106,7 +121,7 @@ export async function postOcrTesseract(file: File | Blob, signal?: AbortSignal):
     method: 'POST',
     headers: { Accept: 'application/json' },
     body: formData,
-    signal,
+    signal: scanRequestSignal(signal),
   })
 
   let json: { success?: boolean; message?: string; data?: ParsedCorner[] } | null = null
@@ -117,7 +132,9 @@ export async function postOcrTesseract(file: File | Blob, signal?: AbortSignal):
   }
 
   if (!res.ok || !json?.success) {
-    throw new Error(json?.message || 'OCR failed to find coordinates')
+    throw new Error(
+      json?.message || messageFromHttpStatus(res.status) || 'OCR failed to find coordinates'
+    )
   }
 
   return json.data as ParsedCorner[]
