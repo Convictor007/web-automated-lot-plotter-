@@ -1,7 +1,7 @@
 # Automated Lot Plotter
 
-Standalone GIS lot plotter with an internal API for document scan.
-
+GIS lot plotter with an internal API for document scan.
+LIVE-DEMO : https://web-automated-lot-plotter.vercel.app
 ## Scan pipeline
 
 1. **Tesseract.js** — extracts full text from the uploaded image  
