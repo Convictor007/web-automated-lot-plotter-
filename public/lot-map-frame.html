@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Lot map</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: #e5e5e5; }
+    #map { width: 100%; height: 100%; }
+    #auth-error {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 999;
+      background: rgba(30, 30, 30, 0.92);
+      color: #fff;
+      font: 14px/1.5 system-ui, sans-serif;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    #auth-error.visible { display: flex; flex-direction: column; gap: 8px; }
+  </style>
+</head>
+<body>
+<div id="auth-error">
+  <strong>Google Maps could not load tiles</strong>
+  <span>Enable <em>Maps JavaScript API</em> for this API key in Google Cloud Console, and allow this site in key HTTP referrers (e.g. <code>localhost:5174/*</code>).</span>
+</div>
+<div id="map"></div>
+<script>
+window.gm_authFailure = function() {
+  var el = document.getElementById('auth-error');
+  if (el) el.classList.add('visible');
+};
+window.lotPlotterApplyBasemap = function(typeKey) {
+  if (!typeKey) typeKey = 'SATELLITE';
+  window._pendingBasemapKey = typeKey;
+  if (!window.map || !window.google || !window.google.maps) return;
+  var g = window.google.maps;
+  var map = window.map;
+  var typeId = g.MapTypeId[typeKey];
+  if (!typeId) {
+    if (typeKey === 'SATELLITE') typeId = 'satellite';
+    else if (typeKey === 'HYBRID') typeId = 'hybrid';
+    else if (typeKey === 'TERRAIN') typeId = 'terrain';
+    else typeId = 'roadmap';
+  }
+  map.setMapTypeId(typeId);
+  if (g.event) g.event.trigger(map, 'resize');
+};
+function calcDist(lat1, lon1, lat2, lon2) {
+  var R = 6371000;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function calcArea(coords) {
+  if (!coords || coords.length < 3) return 0;
+  var a = 0;
+  for (var i = 0; i < coords.length - 1; i++) {
+    a += (coords[i][0] * coords[i+1][1]) - (coords[i+1][0] * coords[i][1]);
+  }
+  a = Math.abs(a) / 2;
+  return a * 110574 * (111320 * Math.cos(12 * Math.PI / 180));
+}
+function calcCentroid(coords) {
+  var lat = 0, lng = 0, n = coords.length - 1;
+  for (var i = 0; i < n; i++) { lat += coords[i][1]; lng += coords[i][0]; }
+  return { lat: lat/n, lng: lng/n };
+}
+function toLotPlanBearingLabel(p1, p2) {
+  var dx = p2[0]-p1[0], dy = p2[1]-p1[1];
+  var angleDeg = Math.atan2(dx, dy) * 180 / Math.PI;
+  var azimuth = (angleDeg + 360) % 360;
+  var quadrant = azimuth <= 180 ? azimuth : 360 - azimuth;
+  var deg = Math.floor(quadrant), min = Math.round((quadrant - deg) * 60);
+  var d = String(deg).padStart(2,'0'), m = String(min).padStart(2,'0');
+  if (azimuth < 90) return 'N '+d+'°'+m+"' E";
+  if (azimuth < 180) return 'S '+d+'°'+m+"' E";
+  if (azimuth < 270) return 'S '+d+'°'+m+"' W";
+  return 'N '+d+'°'+m+"' W";
+}
+function triggerMapResize() {
+  if (window.google && window.google.maps && window.google.maps.event && window.map) {
+    window.google.maps.event.trigger(window.map, 'resize');
+  }
+}
+function waitForMapSize(cb) {
+  function tick() {
+    var el = document.getElementById('map');
+    if (el && el.offsetWidth > 8 && el.offsetHeight > 8) return cb();
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+var mapsScriptLoading = false;
+function loadGoogleMaps(apiKey) {
+  if (window.google && window.google.maps) {
+    waitForMapSize(initMap);
+    return;
+  }
+  if (mapsScriptLoading) return;
+  mapsScriptLoading = true;
+  var s = document.createElement('script');
+  s.async = true;
+  s.defer = true;
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(apiKey) + '&v=weekly&callback=initMap';
+  document.head.appendChild(s);
+}
+window.addEventListener('message', function(event) {
+  var data = event.data;
+  if (!data || !data.type) return;
+  if (data.type === 'INIT_MAP' && data.config) {
+    window._mapInitConfig = data.config;
+    loadGoogleMaps(data.config.apiKey);
+    return;
+  }
+  if (data.type === 'MAP_RESIZE') {
+    triggerMapResize();
+    return;
+  }
+  if (data.type === 'SET_BASEMAP' && typeof window.lotPlotterApplyBasemap === 'function') {
+    window.lotPlotterApplyBasemap(data.mapTypeKey);
+  }
+  if (data.type === 'APPLY_LOT_UI' && typeof window.lotPlotterApplyLotUi === 'function') {
+    window.lotPlotterApplyLotUi(data.payload);
+  }
+  if (data.type === 'FIT_POLYGON' && typeof window.lotPlotterFitPolygon === 'function') {
+    window.lotPlotterFitPolygon();
+  }
+  if (data.type === 'RESET_NORTH' && window.map && typeof window.map.setHeading === 'function') {
+    window.map.setHeading(0);
+  }
+});
+function initMap() {
+  var cfg = window._mapInitConfig;
+  if (!cfg) return;
+  var g = google.maps;
+  var BASEMAP = cfg.basemapKey || 'SATELLITE';
+  window.map = new g.Map(document.getElementById('map'), {
+    center: cfg.center,
+    zoom: cfg.zoom,
+    mapTypeId: g.MapTypeId[BASEMAP] || g.MapTypeId.SATELLITE,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    gestureHandling: 'greedy'
+  });
+  var map = window.map;
+  window.lotPlotterLabelOverlays = [];
+  window.lotPlotterAreaInfo = null;
+  window.lotPlotterLotPolygon = null;
+  window.lotPlotterPolygonCoords = null;
+  window.lotPlotterBounds = null;
+
+  function postRegion() {
+    var c = map.getCenter();
+    var hd = typeof map.getHeading === 'function' ? map.getHeading() : 0;
+    if (hd == null || isNaN(hd)) hd = 0;
+    var msg = { type: 'REGION_CHANGE', center: { lat: c.lat(), lng: c.lng() }, zoom: map.getZoom(), heading: hd };
+    if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*');
+  }
+  map.addListener('idle', postRegion);
+  map.addListener('heading_changed', postRegion);
+  map.addListener('tilesloaded', function() { triggerMapResize(); });
+
+  window.lotPlotterApplyLotUi = function(opts) {
+    var coords = window.lotPlotterPolygonCoords;
+    if (!coords || !coords.length || !window.lotPlotterLotPolygon) return;
+    (window.lotPlotterLabelOverlays || []).forEach(function(o) { try { o.setMap(null); } catch(e){} });
+    window.lotPlotterLabelOverlays = [];
+    if (window.lotPlotterAreaInfo) { try { window.lotPlotterAreaInfo.close(); } catch(e){} window.lotPlotterAreaInfo = null; }
+    window.lotPlotterLotPolygon.setOptions({ strokeColor: opts.strokeColor || '#8e1616', fillColor: opts.fillColor || '#8e1616' });
+    var labelColor = opts.labelColor || '#ffffff';
+    var centroid = calcCentroid(coords);
+    function edgeAngleDeg(p1, p2) {
+      var dx = p2[0]-p1[0], dy = p2[1]-p1[1];
+      var angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+      if (angleDeg > 90 || angleDeg < -90) angleDeg += 180;
+      return angleDeg;
+    }
+    function outwardOffsetPx(p1, p2) {
+      var midLat = (p1[1]+p2[1])/2, midLng = (p1[0]+p2[0])/2;
+      var dx = p2[0]-p1[0], dy = p2[1]-p1[1];
+      var len = Math.sqrt(dx*dx+dy*dy) || 1;
+      var nx = -dy/len, ny = dx/len;
+      var vx = midLng - centroid.lng, vy = midLat - centroid.lat;
+      return (vx*nx + vy*ny) >= 0 ? 16 : -16;
+    }
+    function addAlongLineLabel(html, lat, lng, angleDeg, offsetPx) {
+      function Ov(pos, innerHtml, ang, off, col) {
+        this.pos = pos; this.innerHtml = innerHtml; this.ang = ang; this.off = off; this.col = col; this.div = null;
+      }
+      Ov.prototype = new g.OverlayView();
+      Ov.prototype.onAdd = function() {
+        this.div = document.createElement('div');
+        this.div.style.cssText = 'position:absolute;white-space:nowrap;text-align:center;line-height:1.25;font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:rgba(0,0,0,.62);color:'+this.col+';pointer-events:none';
+        this.div.innerHTML = this.innerHtml;
+        this.getPanes().overlayMouseTarget.appendChild(this.div);
+      };
+      Ov.prototype.draw = function() {
+        if (!this.div) return;
+        var px = this.getProjection().fromLatLngToDivPixel(this.pos);
+        if (!px) return;
+        this.div.style.left = px.x + 'px';
+        this.div.style.top = px.y + 'px';
+        this.div.style.transform = 'translate(-50%,-50%) rotate('+this.ang+'deg) translate(0,'+this.off+'px)';
+      };
+      Ov.prototype.onRemove = function() { if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div); };
+      var ov = new Ov(new g.LatLng(lat, lng), html, angleDeg, offsetPx, labelColor);
+      ov.setMap(map);
+      window.lotPlotterLabelOverlays.push(ov);
+    }
+    function addCenterLabel(html, lat, lng) {
+      function Cv(pos, innerHtml) { this.pos = pos; this.innerHtml = innerHtml; this.div = null; }
+      Cv.prototype = new g.OverlayView();
+      Cv.prototype.onAdd = function() {
+        this.div = document.createElement('div');
+        this.div.style.cssText = 'position:absolute;pointer-events:none';
+        this.div.innerHTML = this.innerHtml;
+        this.getPanes().overlayMouseTarget.appendChild(this.div);
+      };
+      Cv.prototype.draw = function() {
+        if (!this.div) return;
+        var px = this.getProjection().fromLatLngToDivPixel(this.pos);
+        if (!px) return;
+        this.div.style.left = px.x + 'px';
+        this.div.style.top = px.y + 'px';
+        this.div.style.transform = 'translate(-50%,-50%)';
+      };
+      Cv.prototype.onRemove = function() { if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div); };
+      var ov = new Cv(new g.LatLng(lat, lng), html);
+      ov.setMap(map);
+      window.lotPlotterLabelOverlays.push(ov);
+    }
+    var showDistance = opts.showDistance === true;
+    var showArea = opts.showArea === true;
+    if (showDistance) {
+      var segmentEdges = Array.isArray(opts.segmentEdges) ? opts.segmentEdges : [];
+      for (var i = 0; i < coords.length - 1; i++) {
+        var p1 = coords[i], p2 = coords[i+1];
+        var dist = calcDist(p1[1], p1[0], p2[1], p2[0]);
+        var midLat = (p1[1]+p2[1])/2, midLng = (p1[0]+p2[0])/2;
+        var ang = edgeAngleDeg(p1, p2);
+        var off = outwardOffsetPx(p1, p2);
+        var edge = segmentEdges[i];
+        var bearingLine = edge && edge.bearing ? edge.bearing : toLotPlanBearingLabel(p1, p2);
+        var distLine = edge && edge.distanceM != null ? (Number(edge.distanceM).toFixed(2)+' m.') : (dist.toFixed(2)+' m.');
+        addAlongLineLabel(bearingLine + '<br>' + distLine, midLat, midLng, ang, off);
+      }
+    }
+    if (showArea) {
+      if (opts.centerLabelHtml) {
+        addCenterLabel(opts.centerLabelHtml, centroid.lat, centroid.lng);
+      } else {
+        var displayArea = opts.area != null ? opts.area : calcArea(coords);
+        addCenterLabel('<div style="text-align:center;color:'+labelColor+';font-weight:700;font-size:12px;padding:4px 6px;background:rgba(0,0,0,0.55);border-radius:4px">A='+displayArea.toFixed(3)+' Sq.m.</div>', centroid.lat, centroid.lng);
+      }
+    }
+    g.event.addListenerOnce(map, 'idle', function() {
+      (window.lotPlotterLabelOverlays || []).forEach(function(o) { if (o.draw) o.draw(); });
+    });
+  };
+
+  window.lotPlotterFitPolygon = function() {
+    if (window.lotPlotterBounds && !window.lotPlotterBounds.isEmpty()) {
+      map.fitBounds(window.lotPlotterBounds, 50);
+    }
+    triggerMapResize();
+  };
+
+  var polygonData = cfg.polygonData;
+  var polygonsData = cfg.polygonsData;
+  var lotInitialUi = cfg.lotInitialUi;
+
+  if (polygonsData && polygonsData.length) {
+    var mb = new g.LatLngBounds();
+    polygonsData.forEach(function(p) {
+      if (!p || !p.coordinates) return;
+      var mpaths = p.coordinates.map(function(c) { return { lat: c[1], lng: c[0] }; });
+      new g.Polygon({ paths: mpaths, strokeColor: p.color || '#8e1616', fillColor: p.fillColor || '#8e1616', fillOpacity: 0, strokeWeight: 2, map: map });
+      p.coordinates.forEach(function(c) { mb.extend({ lat: c[1], lng: c[0] }); });
+    });
+    if (!mb.isEmpty()) map.fitBounds(mb, 50);
+  } else if (polygonData && polygonData.coordinates && polygonData.coordinates.length) {
+    var paths = polygonData.coordinates.map(function(c) { return { lat: c[1], lng: c[0] }; });
+    window.lotPlotterLotPolygon = new g.Polygon({ paths: paths, strokeColor: polygonData.color || '#8e1616', fillColor: polygonData.fillColor || '#8e1616', fillOpacity: 0, strokeWeight: 2, map: map });
+    window.lotPlotterPolygonCoords = polygonData.coordinates;
+    window.lotPlotterBounds = new g.LatLngBounds();
+    polygonData.coordinates.forEach(function(c) { window.lotPlotterBounds.extend({ lat: c[1], lng: c[0] }); });
+    map.fitBounds(window.lotPlotterBounds, 50);
+    window.lotPlotterApplyLotUi(lotInitialUi);
+  }
+
+  if (typeof window.lotPlotterApplyBasemap === 'function') {
+    window.lotPlotterApplyBasemap(window._pendingBasemapKey || BASEMAP);
+  }
+
+  setTimeout(triggerMapResize, 100);
+  setTimeout(triggerMapResize, 400);
+  setTimeout(triggerMapResize, 900);
+  if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'MAP_READY' }, '*');
+}
+if (window.parent && window.parent !== window) {
+  window.parent.postMessage({ type: 'MAP_FRAME_READY' }, '*');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+[
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",
+    "Tie Point": "BLLM No. 1, Balatan Cadastre (grid sheet)",
+    "Lat": 13.31724889,
+    "Lon": 123.23472889,
+    "Zone": 4,
+    "X": 525430.88,
+    "Y": 1472655.8
+  },
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",  
+    "Tie Point": "BLLM No. 2, Balatan Cadastre (grid sheet)",
+    "Lat": 13.31697746,
+    "Lon": 123.23567865,
+    "Zone": 4,
+    "X": 525380.23,
+    "Y": 1472783.65
+  },
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",
+    "Tie Point": "BLLM No. 3, Balatan Cadastre (grid sheet)",
+    "Lat": 13.37088211,
+    "Lon": 123.24167372,
+    "Zone": 4,
+    "X": 526023.94,
+    "Y": 1478747.73
+  },
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",
+    "Tie Point": "BLLM No. 4, Balatan Cadastre (grid sheet)",
+    "Lat": 13.37280197,
+    "Lon": 123.24163879,
+    "Zone": 4,
+    "X": 526019.95,
+    "Y": 1478960.12
+  },
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",
+    "Tie Point": "BLLM No. 5, Balatan Cadastre (grid sheet)",
+    "Lat": 13.36256684,
+    "Lon": 123.28829185,
+    "Zone": 4,
+    "X": 531074.59,
+    "Y": 1477833.21
+  },
+  {
+    "Province": "CAMARINES SUR",
+    "Municipality": "BALATAN",
+    "Tie Point": "BLLM No. 6, Balatan Cadastre (grid sheet)",
+    "Lat": 13.36148373,
+    "Lon": 123.28951635,
+    "Zone": 4,
+    "X": 531207.37,
+    "Y": 1477713.54
+  }
+]

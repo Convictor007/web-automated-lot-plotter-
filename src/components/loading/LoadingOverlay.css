@@ -1,0 +1,50 @@
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.loading-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  max-width: min(90vw, 360px);
+  padding: 28px 32px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.loading-overlay__spinner {
+  color: #3b5998;
+  animation: loading-overlay-spin 0.85s linear infinite;
+}
+
+.loading-overlay__message {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  text-align: center;
+}
+
+.loading-overlay__submessage {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+  text-align: center;
+  line-height: 1.4;
+}
+
+@keyframes loading-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

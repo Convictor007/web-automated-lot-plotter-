@@ -1,0 +1,144 @@
+.map-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #2c2c2c;
+}
+
+.map-modal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.map-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #3b5998;
+  padding: 12px 10px;
+  gap: 8px;
+}
+
+.map-modal__header-left {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+
+.map-modal__title {
+  font-size: 15px;
+  font-weight: bold;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-modal__icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.map-modal__compare-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.map-modal__settings {
+  position: absolute;
+  top: 56px;
+  left: 12px;
+  width: 280px;
+  background: #fff;
+  padding: 16px;
+  z-index: 9999;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.map-modal__settings-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #1f2937;
+  margin: 0 0 12px;
+}
+
+.map-modal__setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.map-modal__setting-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin: 16px 0 4px;
+}
+
+.map-modal__setting-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 8px;
+}
+
+.map-modal__color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.map-modal__color-box {
+  width: 40px;
+  height: 30px;
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  padding: 0;
+}
+
+.map-modal__color-box--selected {
+  border-color: #1f2937;
+  transform: scale(1.08);
+}
+
+.map-modal__map-wrap {
+  flex: 1;
+  position: relative;
+  padding: 8px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-modal__map-capture {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  border-radius: 12px;
+  overflow: hidden;
+}
